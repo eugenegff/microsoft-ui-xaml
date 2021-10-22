@@ -231,6 +231,85 @@ namespace Windows.UI.Xaml.Tests.MUXControls.ApiTests
         }
 
         [TestMethod]
+        public void TabViewItemConflictingVisualStatesTest()
+        {
+            TabView tabView = null;
+
+            TabViewItem tvi0 = null;
+            TabViewItem tvi1 = null;
+            TabViewItem tvi2 = null;
+            RunOnUIThread.Execute(() =>
+            {
+                tabView = new TabView();
+                Content = tabView;
+
+                tvi0 = CreateTabViewItem("Item 0", Symbol.Add);
+                tvi1 = CreateTabViewItem("Item 1", Symbol.AddFriend);
+                tvi2 = CreateTabViewItem("Item 2");
+
+                tabView.TabItems.Add(tvi0);
+                tabView.TabItems.Add(tvi1);
+                tabView.TabItems.Add(tvi2);
+
+                Content.UpdateLayout();
+            });
+
+            IdleSynchronizer.Wait();
+
+            RunOnUIThread.Execute(() =>
+            {
+                Log.Comment("Verify that each property is modified only by single visual states group");
+                Dictionary<String, VisualStateGroup> propertyOwners = new Dictionary<String, VisualStateGroup>();
+                var rootGrid = VisualTreeHelper.GetChild(tvi0, 0) as FrameworkElement;
+                foreach (var group in VisualStateManager.GetVisualStateGroups(rootGrid))
+                {
+                    foreach (var state in group.States)
+                    {
+                        foreach (var setterBase in state.Setters)
+                        {
+                            if (setterBase is Setter)
+                            {
+                                var targetPropertyPath = (setterBase as Setter).Target;
+
+                                String targetPropertyPathAsString = null;
+                                try
+                                {
+                                    var target = targetPropertyPath.Target as FrameworkElement;
+                                    var path = targetPropertyPath.Path;
+                                    targetPropertyPathAsString = target.Name + "." + path.Path;
+                                }
+                                catch (Exception ex)
+                                {
+                                    var msg = ex.Message;
+                                    var tokens = msg.Split('\'');
+                                    if(tokens.Length == 3)
+                                    {
+                                        var path = targetPropertyPath.Path;
+                                        targetPropertyPathAsString = tokens[1] + "." + path.Path;
+                                    }
+                                }
+                                if (targetPropertyPathAsString == null
+                                || targetPropertyPathAsString == "IconControl.Foreground" // Known bug in TabViewItem style
+                                || targetPropertyPathAsString == "ContentPresenter.Foreground") // Known bug in TabViewItem style
+                                    continue;
+
+                                if (!propertyOwners.ContainsKey(targetPropertyPathAsString))
+                                {
+                                    propertyOwners.Add(targetPropertyPathAsString, group);
+                                }
+                                else
+                                {
+                                    var owner = propertyOwners[targetPropertyPathAsString];
+                                    Verify.IsTrue(ReferenceEquals(owner, group), $"Property \"{targetPropertyPathAsString}\" is modified by both \"{owner.Name}\" and \"{group.Name}\"");
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        [TestMethod]
         public void TabViewItemBackgroundTest()
         {
             TabView tabView = null;
